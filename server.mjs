@@ -5,7 +5,11 @@ import { join, extname, normalize } from 'node:path'
 // 极简本地静态文件服务（离线运行所需）
 // 用法：node server.mjs [端口] [根目录]
 const PORT = Number(process.argv[2]) || 2333
-const ROOT = process.argv[3] || new URL('./dist', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+// ROOT 默认取 server.mjs 同级的 dist 目录。
+// 为什么必须 decodeURIComponent：file URL 的 pathname 会把中文/空格等字符编码成 %XX
+// （如 %E4%B8%AD、%20），而 existsSync/readFileSync 不做解码——项目装在含中文或空格
+// 的路径下时，所有请求都会命中 404 "Not Found"（2026-09 实测复现，纯英文路径无此问题）
+const ROOT = process.argv[3] || decodeURIComponent(new URL('./dist', import.meta.url).pathname).replace(/^\/([A-Za-z]:)/, '$1')
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',

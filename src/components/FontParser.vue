@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { parseFontFile, isFontFile } from '../lib/parseFont'
 import { exportSvgZip } from '../lib/zip'
 import { useProjectStore } from '../store/project'
-import { parseUnicodeMap, applyUnicodeNameMap, loadBuiltinMap } from '../lib/unicodeMap'
+import { parseUnicodeMap, applyUnicodeNameMap, loadBuiltinMap, resolveMappedName } from '../lib/unicodeMap'
 import { isBaseAscii } from '../lib/codepointPlan'
 
 // imported：导入完成通知父级（App 收到后立即执行异常 SVG 检查与修复，无需等下次刷新）
@@ -112,14 +112,17 @@ async function handleFiles(files) {
     fileInfo.value = { name: fontFile.name, count: icons.length }
     selected.value = new Set(icons.map((_, i) => i))
     // 计算码位冲突（仅保持原 unicode 时生效；不保持则自动分配会跳过已占用码位，不会撞）
-    // 冲突 = 与内置基础字符同码位(ASCII 0x20-0x7E) ∪ 与项目已有图标占用码位相同
+    // 冲突 = 与内置基础字符同码位(ASCII 0x20-0x7E) ∪ 与项目已有图标占用码位相同。
+    // 按该字形全部码位（unicodeAll）判定：一个字形的旁路码位若落在内置区（如感叹号
+    // 同时占 0021 与 F12A），只导主码位 F12A 会与内置 0021 形成双字形，必须纳入冲突
+    // 让用户三选一（2026-09 实测反馈）
     const conf = new Set()
     if (keepUnicode.value) {
       const usedCodes = new Set(store.icons.map((ic) => ic.code))
       icons.forEach((it, i) => {
         if (it.unicode == null) return
-        // 冲突 = 与内置基础字符同码位(ASCII 0x20-0x7E) ∪ 与项目已有图标占用码位相同
-        if (isBaseAscii(it.unicode) || usedCodes.has(it.unicode)) conf.add(i)
+        const codes = it.unicodeAll && it.unicodeAll.length ? it.unicodeAll : [it.unicode]
+        if (codes.some(isBaseAscii) || codes.some((c) => usedCodes.has(c))) conf.add(i)
       })
     }
     conflictIndices.value = conf
@@ -226,6 +229,19 @@ function doRemoveConflicts() {
   commitImport(items)
 }
 
+// 覆盖导入时冲突项落哪个码位：优先撞项目旧图标的码位（同码位覆盖，旧图标被替换），
+// 其次字形旁路码位里的内置 ASCII 码位（覆盖内置基础字符，避免一个字形两份轮廓），
+// 最后主码位。数据来源：parseFontFile 的 unicodeAll（该字形在源字体中的全部码位）
+function pickOverwriteCode(p) {
+  const codes = p.unicodeAll && p.unicodeAll.length ? p.unicodeAll : [p.unicode]
+  const usedCodes = new Set(store.icons.map((ic) => ic.code))
+  const hitUsed = codes.find((c) => usedCodes.has(c))
+  if (hitUsed != null) return hitUsed
+  const ascii = codes.find(isBaseAscii)
+  if (ascii != null) return ascii
+  return p.unicode
+}
+
 // ③ 覆盖旧图标：冲突项（已勾选）用同码位覆盖项目旧图标/替换内置基础字形，
 // 未勾选的冲突项不导入；非冲突项照常导入
 function doOverwrite() {
@@ -236,7 +252,10 @@ function doOverwrite() {
     const item = {
       name: p.name,
       svg: p.svg,
-      code: keepUnicode.value && p.unicode != null ? p.unicode : null
+      // 冲突项按 pickOverwriteCode 落码位（可能覆盖内置 ASCII 码位），非冲突项保持主码位
+      code: keepUnicode.value && p.unicode != null
+        ? (isConflict ? pickOverwriteCode(p) : p.unicode)
+        : null
     }
     if (isConflict) conflictItems.push(item)
     else normalItems.push(item)
@@ -287,6 +306,9 @@ function doImport(indices) {
 }
 
 // #8：应用映射（点击按钮后，把文件映射 + 输入框映射合并应用，用于解析补名）
+// mapStatus 显示「真实生效条数」——该字形最终名称能按自身码位（含别名码位）在映射表中
+// 找到出处的个数；未命中映射的（保留字体原名或 glyph-N 兜底）不计入。
+// 之前显示的是映射文件总条数（约 4300），与本次解析实际用上多少条无关，易误导
 function applyMap() {
   const merged = { ...builtinMap.value }
   const pasted = parseUnicodeMap(mapText.value)
@@ -296,12 +318,25 @@ function applyMap() {
     return
   }
   unicodeNameMap.value = merged
-  const fileN = Object.keys(builtinMap.value).length
   const pasteN = Object.keys(pasted).length
-  mapStatus.value = '已应用映射文件 ' + fileN + ' 条' + (pasteN ? '、输入框 ' + pasteN + ' 条' : '') + '映射关系'
+  const totalN = Object.keys(merged).length
   // 已解析的图标按最新映射重新补名
   if (parsed.value.length) {
     parsed.value = applyUnicodeNameMap(parsed.value, unicodeNameMap.value)
+    // 统计真实生效：最终名称 == 按自身码位解析出的名称（映射表优先 + AGL 兜底），
+    // 才说明这个名字来自命名链路；未命中的（保留字体原名或 glyph-N 兜底）不计入
+    let applied = 0
+    for (const p of parsed.value) {
+      const codes = Array.isArray(p.unicodeAll) && p.unicodeAll.length
+        ? p.unicodeAll
+        : (p.unicode != null ? [p.unicode] : [])
+      if (codes.some((c) => resolveMappedName(c, merged) === p.name)) applied++
+    }
+    mapStatus.value = '已应用映射：' + applied + ' 个字形获得映射名称'
+      + '（映射表共 ' + totalN + ' 条' + (pasteN ? '，含输入框 ' + pasteN + ' 条' : '') + '）'
+  } else {
+    // 还没解析字体：映射先就绪，解析时自动应用（此刻无从统计生效数）
+    mapStatus.value = '映射已就绪：共 ' + totalN + ' 条，解析字体后自动应用'
   }
 }
 
@@ -317,6 +352,14 @@ function miniSvg(svg) {
   return svg
     .replace(/width="[^"]*"/, 'width="32"')
     .replace(/height="[^"]*"/, 'height="32"')
+}
+
+// 卡片码位的 title 文案：源字体中同一字形占有的其它码位（别名），仅提示不导入
+// 数据来源：parseFontFile 返回项的 aliases（主码位之外的码位，升序）
+function aliasTip(item) {
+  const list = item.aliases || []
+  if (!list.length) return ''
+  return '源字体中该字形还占有：' + list.map((c) => 'U+' + c.toString(16).toUpperCase().padStart(4, '0')).join('、') + '（不导入，仅参考）'
 }
 </script>
 
@@ -444,7 +487,7 @@ function miniSvg(svg) {
               </button>
               <div class="mini" v-html="miniSvg(item.svg)"></div>
               <span class="iname" :title="conflictIndices.has(i) ? '码位冲突：与内置基础字符/项目已占用码位相同' : item.name">{{ item.name }}</span>
-              <span class="icode" v-if="item.unicode != null">{{ item.unicode.toString(16).toUpperCase().padStart(4, '0') }}</span>
+              <span class="icode" v-if="item.unicode != null" :title="aliasTip(item)">{{ item.unicode.toString(16).toUpperCase().padStart(4, '0') }}</span>
               <!-- #11：预览改名 -->
               <button class="rename-btn" type="button" @click.stop="renameItem(i)" title="改名">改名</button>
             </div>

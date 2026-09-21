@@ -134,6 +134,20 @@ function glyphToPathData(cmds, metrics = {}) {
   return d
 }
 
+// 私有使用区（PUA）码位判定：BMP E000–F8FF / 补充 PUA-A F0000–FFFFD / PUA-B 100000–10FFFD
+// 为什么需要：源字体常把同一字形同时映射到 PUA 码位与真实 Unicode 码位（如播放键
+// 同时占 U+F04B 与 U+25B6）。主码位取 PUA 段，图标才不占用真实文本字符码位
+// （否则用户在文档里敲 ▶/£/× 会渲染出图标），也与码位规划里"参考图标占 PUA 段"的口径一致
+function isPuaCode(cp) {
+  return (cp >= 0xe000 && cp <= 0xf8ff) || (cp >= 0xf0000 && cp <= 0xffffd) || (cp >= 0x100000 && cp <= 0x10fffd)
+}
+
+// 从字形的全部码位中选主码位：优先 PUA 段码位，无 PUA 码位时取最小码位（cps 为升序数组）
+function pickPrimaryCode(cps) {
+  const pua = cps.find(isPuaCode)
+  return pua != null ? pua : cps[0]
+}
+
 // 解析字体文件为 { name, svg } 列表
 // size: SVG 边长（输出 viewBox 1000 系，width/height=size）
 export async function parseFontFile(file, size = 512) {
@@ -148,18 +162,23 @@ export async function parseFontFile(file, size = 512) {
   // fontkit 无按 glyph 索引遍历的公开 API，用 characterSet（码位列表）反查，
   // 按 glyph id 排序输出，保持与"字形序"一致的稳定顺序；无 unicode 的字形不导出
   //（woff2 制作时通常已剔除；与 opentype 的差异仅为极少数无码位字形）
-  const byGlyph = new Map() // glyphId → 首个码位
+  // 同一字形可能被 cmap 映射到多个码位（多对一）：全部收集，主码位由 pickPrimaryCode
+  // 选取，其余码位只作查名候选与别名提示，避免同一字形重复导出
+  const byGlyph = new Map() // glyphId → 全部码位（characterSet 升序，收集即有序）
   for (const cp of font.characterSet) {
     const g = font.glyphForCodePoint(cp)
-    if (g && !byGlyph.has(g.id)) byGlyph.set(g.id, cp)
+    if (!g) continue
+    if (!byGlyph.has(g.id)) byGlyph.set(g.id, [])
+    byGlyph.get(g.id).push(cp)
   }
   const ordered = [...byGlyph.entries()].sort((a, b) => a[0] - b[0])
 
-  for (const [gid, cp] of ordered) {
+  for (const [gid, cps] of ordered) {
+    const cp = pickPrimaryCode(cps)
     const glyph = font.glyphForCodePoint(cp)
     // 跳过 glyph 0（.notdef，字体必备的缺字占位符）与 Unicode 非字符码位：
     // 这类字形不是图标；且非字符码位（如 U+FFFF）会写进字体构建的 XML，导致 fonteditor 解析中断、
-    // 其后所有图标字形丢失（2026-09 实测：fa-brands 解析导入后导出只剩基础字形）
+    // 其后所有图标字形丢失（2026-09 实测：某参考字体解析导入后导出只剩基础字形，即此原因）
     if (gid === 0) continue
     if (isNoncharacter(cp)) continue
     if (isNotdefName(glyph.name)) continue
@@ -172,9 +191,10 @@ export async function parseFontFile(file, size = 512) {
     })
     if (!d) continue
 
-    // 命名：优先 glyph 名（CFF CharStrings 名，如 wifi-weak）；无名字时用 uniXXXX 兜底
+    // 命名：优先 glyph 名（CFF CharStrings 名，如 wifi-weak）；无名字或占位名
+    // （glyphNN / uniXXXX / 发布版参考字体常见的 iNNN 混淆名）时用 uniXXXX 兜底
     let name = glyph.name
-    if (!name || /^[gG]l?yph/i.test(name)) {
+    if (!name || /^[gG]l?yph/i.test(name) || /^i\d+$/.test(name)) {
       name = cp > 0 ? 'uni' + cp.toString(16).toUpperCase().padStart(4, '0') : 'glyph-' + (gid + 1)
     }
     // 重名处理
@@ -186,7 +206,16 @@ export async function parseFontFile(file, size = 512) {
     seenNames.add(name)
 
     // advanceWidth（fontkit 字体单位，仅随结果返回供参考）
-    result.push({ name, svg: buildSvg(d, size), unicode: cp, advanceWidth: glyph.advanceWidth })
+    // unicodeAll：该字形在源字体中的全部码位（升序），供名称映射逐码位查名
+    // aliases：主码位之外的码位，仅供预览卡片 title 提示，不进入项目数据
+    result.push({
+      name,
+      svg: buildSvg(d, size),
+      unicode: cp,
+      unicodeAll: cps,
+      aliases: cps.filter((c) => c !== cp),
+      advanceWidth: glyph.advanceWidth
+    })
   }
 
   return result

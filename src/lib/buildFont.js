@@ -110,7 +110,7 @@ export function buildTtfFont(icons, familyName = 'snfont', weight = 'regular') {
     // 防御性过滤（兼容旧项目数据）：
     // · 名字为 .notdef：字体必备的缺字占位符（fonteditor 会自动创建 glyph 0），这里不能再塞一个；
     // · 码位是非字符（U+FDD0–U+FDEF / U+*FFFE / U+*FFFF）：写进 SVG 字体的 XML 会让 fonteditor
-    //   解析中断，导致其后所有图标字形丢失（2026-09 实测：fa-brands 解析导入后导出只剩基础字形即此原因）
+    //   解析中断，导致其后所有图标字形丢失（2026-09 实测：某参考字体解析导入后导出只剩基础字形即此原因）
     const rawCode = icon.code != null ? icon.code : null
     if (isNotdefName(name) || isNoncharacter(rawCode)) {
       skipped.push(name + (rawCode != null ? '(U+' + rawCode.toString(16).toUpperCase() + ')' : ''))

@@ -68,7 +68,7 @@ export function isBaseAscii(code) {
 // Unicode 非字符（noncharacter）：U+FDD0–U+FDEF、以及每个平面末尾的 U+xFFFE / U+xFFFF。
 // 为什么需要判定：字体里的 glyph 0（.notdef）常被赋予 U+FFFF 这类非字符码位；
 // 若把它当普通图标带进字体构建，fonteditor 解析到该码位会中断，导致其后的图标字形全部丢失
-// （2026-09 实测：fa-brands 解析导入后导出字体只剩基础字形，即此原因）。
+// （2026-09 实测：某参考字体解析导入后导出字体只剩基础字形，即此原因）。
 export function isNoncharacter(code) {
   if (typeof code !== 'number' || !isFinite(code)) return false
   if (code >= 0xfdd0 && code <= 0xfdef) return true

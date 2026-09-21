@@ -102,8 +102,9 @@ export function buildDemoHtml(project, mapping, cssName, classPrefix = 'sn-', fo
       const cls = `${classPrefix}${icon.name}`
       // 真实 unicode 字符作为文本（#7 可选中复制）
       const uniChar = code != null ? String.fromCodePoint(code) : ''
-      return `<div class="item" data-name="${icon.name}">
-  <i class="${cls}" data-unicode="${uniChar}">${uniChar}</i>
+      // data-code：码位 hex（大写，与 .code 显示一致）写在卡片 div 上，供页内搜索按 unicode 过滤；无码位时留空
+      return `<div class="item" data-name="${icon.name}" data-code="${code != null ? codeHex : ''}">
+  <i class="${cls}">${uniChar}</i>
   <!-- 超长省略号截断；完整名 hover 显示（title） -->
   <div class="name" data-copy="${icon.name}" title="${icon.name}">${icon.name}</div>
   <div class="code" data-copy="${codeHex}">${codeHex}</div>
@@ -230,20 +231,18 @@ ${indexBar}
     });
   });
 
-  // #17：搜索过滤（支持名称 + unicode）
+  // #17：搜索过滤（支持名称 + unicode 码位）
+  // 码位 hex 取自卡片 div 的 data-code（大写，如 F04B）；小写化后同时匹配
+  // f04b / F04B / u+f04b 几种输入形式；无码位（data-code 为空）的卡片只按名称匹配
   var search = document.getElementById('search');
   search.addEventListener('input', function() {
     var kw = search.value.trim().toLowerCase();
     document.querySelectorAll('.group').forEach(function(g) {
       var show = false;
       g.querySelectorAll('.item').forEach(function(item) {
-        var name = item.getAttribute('data-name').toLowerCase();
-        var code = (item.getAttribute('data-unicode') || '').toLowerCase();
-        var codeHex = '';
-        if (code) {
-          try { codeHex = code.codePointAt(0).toString(16).toLowerCase(); } catch(e) {}
-        }
-        var hit = !kw || name.includes(kw) || codeHex.includes(kw) || ('u+' + codeHex).includes(kw);
+        var name = (item.getAttribute('data-name') || '').toLowerCase();
+        var hex = (item.getAttribute('data-code') || '').toLowerCase();
+        var hit = !kw || name.includes(kw) || (!!hex && (hex.includes(kw) || ('u+' + hex).includes(kw)));
         item.style.display = hit ? '' : 'none';
         if (hit) show = true;
       });
