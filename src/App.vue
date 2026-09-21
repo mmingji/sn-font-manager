@@ -148,10 +148,12 @@ const filteredIcons = computed(() => {
   if (!kw) return store.icons
   return store.icons.filter((i) => {
     if (i.name.toLowerCase().includes(kw)) return true
-    // 支持按 unicode 搜索（hex，如 e000、f1f8）
+    // 支持按 unicode 搜索：不补齐（41）与 4 位补齐（0041）两种格式都认，
+    // 带不带 u+ 前缀均可——与 demo 页按卡片显示格式（0041）搜索的口径对齐
     if (i.code != null) {
       const hex = i.code.toString(16).toLowerCase()
-      if (hex.includes(kw) || ('u+' + hex).includes(kw)) return true
+      const padded = hex.padStart(4, '0')
+      if (hex.includes(kw) || padded.includes(kw) || ('u+' + hex).includes(kw) || ('u+' + padded).includes(kw)) return true
     }
     return false
   })
