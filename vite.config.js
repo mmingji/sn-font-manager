@@ -10,25 +10,29 @@ import { fileURLToPath, URL } from 'node:url'
 // 2) file:// 下 fetch 外部文件（wasm/json）被拦 → 以 dataURL 内联（assetsInlineLimit 放开）
 // 3) 不使用 Service Worker/PWA（file:// 下本就不可用），维持零依赖双击运行
 // 绿色版 index.html 定制（仅构建时）：
-// 1) 注入两个"可编辑数据脚本"（经典 script，file:// 下可加载；用户改 data.js 后刷新即生效）
-// 2) favicon 内联为 data URI（dist 只剩 index.html + 数据脚本，分发更干净）
+// 1) favicon 内联为 data URI（源：public/favicon.svg；dev 下仍走外部文件）
+// 2) 构建后清理 dist 里的 favicon.svg 副本 —— public/ 会被整体复制到 dist，
+//    而 favicon 已内联，留下副本会让"单文件产物"不干净（2026-10 处理）
+// 3) 可编辑数据脚本（unicode-map.data.js 等）不静态注入：
+//    静态 <script src> 会被缓存，导致"改文件后普通刷新读旧数据"；
+//    改由应用运行时动态加载（lib/loadDataScript.js，带时间戳绕缓存），保证刷新即生效
 function portableIndexPlugin() {
   return {
     name: 'snfont-portable-index',
     apply: 'build',
     transformIndexHtml(html) {
-      let out = html
-      // favicon → data URI
       const faviconPath = fileURLToPath(new URL('./public/favicon.svg', import.meta.url))
-      if (fs.existsSync(faviconPath)) {
-        const svg = fs.readFileSync(faviconPath, 'utf8')
-        const dataUri = 'data:image/svg+xml,' + encodeURIComponent(svg.replace(/\s+/g, ' ').trim())
-        out = out.replace(/<link rel="icon"[^>]*>/, '<link rel="icon" href="' + dataUri + '" />')
+      if (!fs.existsSync(faviconPath)) return html
+      const svg = fs.readFileSync(faviconPath, 'utf8')
+      const dataUri = 'data:image/svg+xml,' + encodeURIComponent(svg.replace(/\s+/g, ' ').trim())
+      return html.replace(/<link rel="icon"[^>]*>/, '<link rel="icon" href="' + dataUri + '" />')
+    },
+    closeBundle() {
+      const copied = fileURLToPath(new URL('./dist/favicon.svg', import.meta.url))
+      if (fs.existsSync(copied)) {
+        fs.rmSync(copied)
+        console.log('[portable] 已移除 dist/favicon.svg（favicon 已内联进 index.html）')
       }
-      // 注意：可编辑数据脚本（unicode-map.data.js 等）不在这里静态注入 ——
-      // 静态 <script src> 会被缓存，导致"改文件后普通刷新读旧数据"；
-      // 改由应用运行时动态加载（lib/loadDataScript.js，带时间戳绕缓存），保证刷新即生效
-      return out
     }
   }
 }

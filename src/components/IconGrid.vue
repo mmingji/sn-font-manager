@@ -140,7 +140,8 @@ function scrollToGroup(key) {
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  /* 最小 156px：保证卡片 hover 时「改名/替换/删除」三按钮一行放下（见 IconCard .op） */
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
   gap: 12px;
 }
 

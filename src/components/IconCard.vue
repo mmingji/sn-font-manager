@@ -212,9 +212,12 @@ function remove() {
 }
 
 .op {
-  padding: 3px 10px;
+  /* 卡片宽度有限（网格最小 156px），三按钮必须一行放下：
+     nowrap 防竖排，内边距收窄保证总宽 < 卡片可用宽（字号保持 12px 不变） */
+  padding: 3px 6px;
   font-size: 12px;
   border-radius: 6px;
+  white-space: nowrap;
 }
 
 .op.danger {

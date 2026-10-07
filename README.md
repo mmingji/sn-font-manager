@@ -16,6 +16,12 @@
 
 **绿色免安装版**：构建产物是**单个 index.html**，解压双击即用（无需安装、无需服务、不联网）。下载见 [Releases](https://github.com/mmingji/sn-font-manager/releases)。
 
+## 界面预览
+
+| 图标管理 | 解析字体 | 预览产物 |
+| --- | --- | --- |
+| ![图标管理：分组网格与卡片 hover 操作](docs/screenshots/01-manage.png) | ![解析字体：码位冲突检测与三选一处理](docs/screenshots/02-parse.png) | ![产物预览页 demo.html](docs/screenshots/03-demo.png) |
+
 ## 功能
 
 | 功能 | 说明 |

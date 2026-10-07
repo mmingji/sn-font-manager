@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- 页签名称：固定为应用品牌「SnFont 字体图标管理」；项目名在页面副信息行展示 -->
   <title>SnFont 字体图标管理</title>
+  <!-- favicon：dev 走 public/favicon.svg；构建时由 vite.config.js 的 portableIndexPlugin
+       内联为 data URI（同时清理 dist 里的 public 副本），保证产物无外部图标文件 -->
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
 </head>
 <body>

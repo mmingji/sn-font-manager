@@ -16,6 +16,12 @@ A pure front-end (zero-backend) font-icon manager: parse an existing font into u
 
 **Portable build**: the production artifact is a **single index.html** — unzip and double-click, no installer, no server, no network. Download from [Releases](https://github.com/mmingji/sn-font-manager/releases).
 
+## Screenshots
+
+| Icon management | Font parsing | Preview page |
+| --- | --- | --- |
+| ![Icon management: grouped grid with card hover actions](docs/screenshots/01-manage.png) | ![Font parsing: codepoint conflict detection and resolution](docs/screenshots/02-parse.png) | ![Generated demo page](docs/screenshots/03-demo.png) |
+
 ## Features
 
 | Feature | Description |
