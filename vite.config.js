@@ -28,10 +28,17 @@ function portableIndexPlugin() {
       return html.replace(/<link rel="icon"[^>]*>/, '<link rel="icon" href="' + dataUri + '" />')
     },
     closeBundle() {
-      const copied = fileURLToPath(new URL('./dist/favicon.svg', import.meta.url))
-      if (fs.existsSync(copied)) {
-        fs.rmSync(copied)
-        console.log('[portable] 已移除 dist/favicon.svg（favicon 已内联进 index.html）')
+      // public/ 会被整体复制到 dist，以下副本在产物中已不需要（内容已内联/已由运行时动态加载）：
+      // - favicon.svg：已内联为 index.html 的 data URI
+      // - woff2.wasm：woff2 编解码 wasm 已内联为 dataURL（构建时经 src/assets 内联）
+      // 保留 unicode-map.data.js / codepoint-plan.data.js —— 绿色版允许用户直接编辑的数据文件
+      const redundant = ['favicon.svg', 'woff2.wasm']
+      for (const name of redundant) {
+        const p = fileURLToPath(new URL('./dist/' + name, import.meta.url))
+        if (fs.existsSync(p)) {
+          fs.rmSync(p)
+          console.log('[portable] 已移除 dist/' + name + '（产物中已内联，无需外部副本）')
+        }
       }
     }
   }
